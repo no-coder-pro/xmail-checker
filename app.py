@@ -1,0 +1,82 @@
+from flask import Flask, request, jsonify
+import requests
+
+app = Flask(__name__)
+
+# Headers for the ychecker.com/app/payload request
+headers_payload = {
+    'accept': '*/*',
+    'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
+    'dnt': '1',
+    'priority': 'u=1, i',
+    'referer': 'https://ychecker.com/',
+    'sec-ch-ua': '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+}
+
+# Headers for the api.sonjj.com/v1/check_email/ request
+headers_check_email = {
+    'accept': '*/*',
+    'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
+    'dnt': '1',
+    'origin': 'https://ychecker.com',
+    'priority': 'u=1, i',
+    'referer': 'https://ychecker.com/',
+    'sec-ch-ua': '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'cross-site',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+}
+
+@app.route('/')
+def index():
+    return jsonify({
+        "message": "Welcome to the Gmail Checker API!",
+        "example_usage": "/api/check?gmail=test@example.com"
+    })
+
+@app.route('/api/check', methods=['GET'])
+def check_gmail():
+    email = request.args.get('gmail')
+    if not email:
+        return jsonify({"error": "Email parameter is missing"}), 400
+
+    try:
+        with requests.Session() as session:
+            # First, make a GET request to the base URL to capture cookies
+            session.get('https://ychecker.com/', headers=headers_payload, timeout=15)
+
+            # Now, make the request to the payload endpoint using the session
+            url_payload = 'https://ychecker.com/app/payload'
+            params_payload = {'email': email, 'use_credit_first': '0'}
+            resp_payload = session.get(url_payload, params=params_payload, headers=headers_payload, timeout=15)
+            resp_payload.raise_for_status() # Raise an exception for HTTP errors
+            data_payload = resp_payload.json()
+            enc = data_payload.get('items')
+
+            if not enc:
+                return jsonify({"error": "Could not retrieve payload items"}), 500
+
+            # Make the final request to check email
+            url_check_email = f"https://api.sonjj.com/v1/check_email/?payload={enc}"
+            response_check_email = session.get(url_check_email, headers=headers_check_email, timeout=15)
+            response_check_email.raise_for_status() # Raise an exception for HTTP errors
+            data_check_email = response_check_email.json()
+            
+            return jsonify(data_check_email)
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": "An unexpected error occurred: " + str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
