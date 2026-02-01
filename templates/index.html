@@ -342,6 +342,88 @@
             color: var(--text-main);
             margin: 5px 0;
         }
+
+        /* Tabs Styling */
+        .tab-bar {
+            display: flex;
+            gap: 12px;
+            padding: 16px 24px;
+            border-bottom: 1px solid #f1f3f4;
+            overflow-x: auto;
+            scrollbar-width: none;
+            background: white;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .tab-bar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--gmail-gray);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .tab:hover {
+            background: #f1f3f4;
+            border-color: #bdc1c6;
+        }
+
+        .tab.active {
+            background: var(--gmail-blue);
+            color: white;
+            border-color: var(--gmail-blue);
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3);
+        }
+
+        .tab-count {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .tab.active .tab-count {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .tab-download {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-left: 4px;
+            font-size: 12px;
+            transition: background 0.2s;
+            color: inherit;
+        }
+
+        .tab:not(.active) .tab-download:hover {
+            background: #e8eaed;
+            color: var(--gmail-blue);
+        }
+
+        .tab.active .tab-download:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .action-bar h2 {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 
@@ -428,8 +510,12 @@
                 <div class="action-bar" style="padding:16px 24px; border-bottom:1px solid #f1f3f4; margin:0">
                     <h2><i class="fas fa-inbox"></i> Inbox Results</h2>
                     <button class="btn btn-secondary" id="downloadBtn">
-                        <i class="fas fa-download"></i> Export CSV
+                        <i class="fas fa-download"></i> Export All
                     </button>
+                </div>
+
+                <div id="tabBar" class="tab-bar">
+                    <!-- Dynamic tabs will be injected here -->
                 </div>
 
                 <div class="table-container" style="border:none; border-radius:0 0 8px 8px">
@@ -466,7 +552,8 @@
 
     <script>
         const store = {
-            results: []
+            results: [],
+            currentFilter: 'all'
         };
 
         const els = {
@@ -478,6 +565,7 @@
             progressBar: document.getElementById('progressBar'),
             resultsSection: document.getElementById('resultsSection'),
             resultsBody: document.getElementById('resultsBody'),
+            tabBar: document.getElementById('tabBar'),
             downloadBtn: document.getElementById('downloadBtn'),
             toast: document.getElementById('toast'),
             stats: {
@@ -550,7 +638,7 @@
         }
 
         function getStatusBadge(status) {
-            const s = (status || 'unknown').toLowerCase();
+            const s = (status || 'Unknown').toLowerCase();
 
             // Green: Live, Valid
             if (s.includes('live') || s.includes('valid')) {
@@ -558,7 +646,7 @@
             }
 
             // Red: Disabled, Does not exist, Unregistered, Invalid
-            if (s.includes('disabled') || s.includes('exist') || s.includes('unregistered') || s.includes('invalid')) {
+            if (s.includes('disabled') || s.includes('exist') || s.includes('unregistered') || s.includes('invalid') || s.includes('error')) {
                 return `<span class="status-badge status-disabled">${status}</span>`;
             }
 
@@ -572,24 +660,34 @@
         }
 
         function renderResults() {
-            const { results } = store;
-            els.resultsBody.innerHTML = '';
+            const { results, currentFilter } = store;
 
+            // 1. Calculate stats (always based on total results)
             let counts = { valid: 0, disabled: 0, unknown: 0 };
-
-            results.forEach((r, idx) => {
-                const tr = document.createElement('tr');
+            results.forEach(r => {
                 const s = (r.status || '').toLowerCase();
+                if (s.includes('live') || s.includes('valid')) counts.valid++;
+                else if (s.includes('disabled') || s.includes('exist') || s.includes('unregistered') || s.includes('invalid') || s.includes('error')) counts.disabled++;
+                else counts.unknown++;
+            });
 
-                // Count logic matching badge logic
-                if (s.includes('live') || s.includes('valid')) {
-                    counts.valid++;
-                } else if (s.includes('disabled') || s.includes('exist') || s.includes('unregistered') || s.includes('invalid')) {
-                    counts.disabled++;
-                } else {
-                    counts.unknown++;
-                }
+            els.stats.total.textContent = results.length;
+            els.stats.valid.textContent = counts.valid;
+            els.stats.disabled.textContent = counts.disabled;
+            els.stats.unknown.textContent = counts.unknown;
 
+            // 2. Render Tabs
+            renderTabs();
+
+            // 3. Filter results for table display
+            const filteredResults = currentFilter === 'all'
+                ? results
+                : results.filter(r => (r.status || 'Unknown').toLowerCase() === currentFilter.toLowerCase());
+
+            // 4. Render Table Body
+            els.resultsBody.innerHTML = '';
+            filteredResults.forEach((r, idx) => {
+                const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${idx + 1}</td>
                     <td>${r.email}</td>
@@ -599,13 +697,83 @@
                 els.resultsBody.appendChild(tr);
             });
 
-            // Update stats
-            els.stats.total.textContent = results.length;
-            els.stats.valid.textContent = counts.valid;
-            els.stats.disabled.textContent = counts.disabled;
-            els.stats.unknown.textContent = counts.unknown;
-
             els.resultsSection.classList.remove('hidden');
+        }
+
+        function renderTabs() {
+            const { results, currentFilter } = store;
+            els.tabBar.innerHTML = '';
+
+            // Get unique statuses
+            const uniqueStatuses = [...new Set(results.map(r => r.status || 'Unknown'))].sort();
+
+            // Create 'All' tab
+            els.tabBar.appendChild(createTab('All', 'all', results.length));
+
+            // Create tabs for each status
+            uniqueStatuses.forEach(status => {
+                const count = results.filter(r => (r.status || 'Unknown') === status).length;
+                els.tabBar.appendChild(createTab(status, status.toLowerCase(), count));
+            });
+        }
+
+        function createTab(label, filterValue, count) {
+            const tab = document.createElement('div');
+            tab.className = `tab ${store.currentFilter === filterValue ? 'active' : ''}`;
+
+            tab.innerHTML = `
+                <span>${label}</span>
+                <span class="tab-count">${count}</span>
+                <span class="tab-download" title="Download ${label} CSV">
+                    <i class="fas fa-download"></i>
+                </span>
+            `;
+
+            tab.addEventListener('click', (e) => {
+                const downloadBtn = e.target.closest('.tab-download');
+                if (downloadBtn) {
+                    downloadFilteredResults(filterValue);
+                    e.stopPropagation();
+                    return;
+                }
+                store.currentFilter = filterValue;
+                renderResults();
+            });
+
+            return tab;
+        }
+
+        async function downloadFilteredResults(filterValue) {
+            let filtered = store.results;
+            if (filterValue !== 'all') {
+                filtered = store.results.filter(r => (r.status || 'Unknown').toLowerCase() === filterValue);
+            }
+
+            if (!filtered.length) {
+                showToast("No data to download");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ results: filtered })
+                });
+
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filterValue}_results_${new Date().getTime()}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                showToast(`${filterValue} CSV downloaded`);
+
+            } catch (e) {
+                showToast("Download failed");
+            }
         }
 
         async function downloadCSV() {
