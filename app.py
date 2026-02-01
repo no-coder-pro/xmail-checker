@@ -125,10 +125,11 @@ def api_check():
     
     if "json" in check_resp and isinstance(check_resp["json"], dict):
         data = check_resp["json"]
+        logging.info(f"API Response Data: {data}")
         if isinstance(data.get("data"), list):
             for item in data["data"]:
-                mail = item.get("mail") or item.get("email")
-                status = item.get("status") or item.get("state") or "unknown"
+                mail = item.get("email") or item.get("mail")
+                status = item.get("status") or item.get("state") or "Unknown"
                 
                 if mail:
                     detailed_results.append({
